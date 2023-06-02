@@ -9,6 +9,4 @@ public class SpotifyClass {
     public static void main(String[] args) {
         SpringApplication.run(SpotifyClass.class, args);
     }
-
-
 }

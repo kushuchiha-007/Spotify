@@ -1,6 +1,7 @@
 package com.example.newproject.model;
 
 import com.example.newproject.helper.Indices;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.elasticsearch.annotations.Document;
 import org.springframework.data.elasticsearch.annotations.Field;
@@ -11,26 +12,18 @@ import java.util.List;
 
 @Document(indexName = Indices.ALBUM_INDEX)
 @Setting(settingPath = "static/es-settings.json")
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class ElasticArtist {
-    @Override
-    public String toString() {
-        return "ElasticArtists{" +
-                "id='" + id + '\'' +
-                ", name='" + name + '\'' +
-                ", type='" + type + '\'' +
-                ", genre=" + genre +
-                '}';
-    }
 
     @Id
     @Field(type = FieldType.Keyword)
     String id;
     @Field(type = FieldType.Keyword)
     String name;
-
     @Field(type = FieldType.Keyword)
     String type;
-
+    @Field(type = FieldType.Integer)
+    int Popularity;
     @Field(type = FieldType.Keyword)
     List<Object> genre;
 
@@ -64,5 +57,23 @@ public class ElasticArtist {
 
     public void setGenre(List<Object> genre) {
         this.genre = genre;
+    }
+    public int getPopularity() {
+        return Popularity;
+    }
+
+    public void setPopularity(int popularity) {
+        Popularity = popularity;
+    }
+
+    @Override
+    public String toString() {
+        return "ElasticArtist{" +
+                "id='" + id + '\'' +
+                ", name='" + name + '\'' +
+                ", type='" + type + '\'' +
+                ", Popularity=" + Popularity +
+                ", genre=" + genre +
+                '}';
     }
 }
