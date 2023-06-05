@@ -1,20 +1,17 @@
 package com.example.newproject.model;
 
-import com.example.newproject.helper.Indices;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.elasticsearch.annotations.Document;
 import org.springframework.data.elasticsearch.annotations.Field;
 import org.springframework.data.elasticsearch.annotations.FieldType;
 import org.springframework.data.elasticsearch.annotations.Setting;
-
 import java.util.List;
 
-@Document(indexName = Indices.ALBUM_INDEX)
+@Document(indexName = "${spotify.artist_index}")
 @Setting(settingPath = "static/es-settings.json")
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ElasticArtist {
-
     @Id
     @Field(type = FieldType.Keyword)
     String id;
@@ -26,6 +23,17 @@ public class ElasticArtist {
     int Popularity;
     @Field(type = FieldType.Keyword)
     List<Object> genre;
+
+    public ElasticArtist(){
+
+    }
+    public ElasticArtist(String id, String name, String type, int popularity, List<Object> genre) {
+        this.id = id;
+        this.name = name;
+        this.type = type;
+        this.Popularity = popularity;
+        this.genre = genre;
+    }
 
     public String getId() {
         return id;
@@ -72,7 +80,8 @@ public class ElasticArtist {
                 "id='" + id + '\'' +
                 ", name='" + name + '\'' +
                 ", type='" + type + '\'' +
-                ", Popularity=" + Popularity +
+                ", Popularity=" +
+                Popularity +
                 ", genre=" + genre +
                 '}';
     }

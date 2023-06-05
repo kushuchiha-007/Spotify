@@ -35,21 +35,18 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.*;
 
-
 @Service
 public class SpotifyService {
-    @Autowired
     private MongoRepo mongoRepo;
-    @Autowired
     private ElasticRepo elasticRepo;
+    private ElasticsearchOperations elasticsearchOperations;
     @Autowired
-    public ElasticsearchOperations elasticsearchOperations;
+    private ElasticsearchClient elasticsearchClient;
     @Autowired
-    ElasticsearchClient elasticsearchClient;
+    private MongoClient client;
+    private static HttpClient httpClient = HttpClient.newHttpClient();
     @Autowired
-    MongoClient client;
-    @Autowired
-    MongoConverter mongoConverter;
+    private MongoConverter mongoConverter;
     @Value("${spotify.bearerToken}")
     public String bearerToken;
     @Value("${spotify.database}")
@@ -59,6 +56,7 @@ public class SpotifyService {
     @Value("${spotify.BASE_URL}")
     public String BASE_URL ;
 
+    @Autowired
     public SpotifyService(MongoRepo mongoRepo, ElasticRepo elasticRepo,ElasticsearchOperations elasticsearchOperations) {
         this.mongoRepo = mongoRepo;
         this.elasticRepo = elasticRepo;
@@ -73,16 +71,16 @@ public class SpotifyService {
                 .setHeader("Content-Type", "application/json")
                 .build();
     }
-    public MongoArtist getMongoArtists(String id) throws IOException, InterruptedException {
 
+    private String spotifyFetchArtists(String id) throws IOException, InterruptedException {
         String artistId = id;
         String artistProfileEndpoint = BASE_URL + "/artists/" + artistId;
         HttpRequest request = createGetRequest(artistProfileEndpoint, bearerToken);
-        HttpClient client = HttpClient.newHttpClient();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        String jsonString = response.body();
-        System.out.println(jsonString);
-
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        return  response.body();
+    }
+    public MongoArtist getMongoArtists(String id) throws IOException, InterruptedException {
+        String jsonString = spotifyFetchArtists(id);
         JSONObject jsonObject = new JSONObject(jsonString);
 
         String Id = jsonObject.getString("id");
@@ -90,24 +88,11 @@ public class SpotifyService {
         String type = jsonObject.getString("type");
         List<Object> genre = jsonObject.getJSONArray("genres").toList();
 
-
-        MongoArtist artist = new MongoArtist();
-        artist.setId(Id);
-        artist.setName(name);
-        artist.setType(type);
-        artist.setGenre(genre);
+        MongoArtist artist = new MongoArtist(Id,name,type,genre);
         return mongoRepo.save(artist);
     }
     public ElasticArtist getElasticArtists(String id) throws IOException, InterruptedException {
-
-        String artistId = id;
-        String artistProfileEndpoint = BASE_URL + "/artists/" + artistId;
-        HttpRequest request = createGetRequest(artistProfileEndpoint, bearerToken);
-        HttpClient client = HttpClient.newHttpClient();
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        String jsonString = response.body();
-        System.out.println(jsonString);
-
+        String jsonString = spotifyFetchArtists(id);
         JSONObject jsonObject = new JSONObject(jsonString);
 
         String Id = jsonObject.getString("id");
@@ -116,23 +101,15 @@ public class SpotifyService {
         int popularity = jsonObject.getInt("popularity");
         List<Object> genre = jsonObject.getJSONArray("genres").toList();
 
-        System.out.println(popularity);
-        ElasticArtist artist = new ElasticArtist();
-        artist.setId(Id);
-        artist.setName(name);
-        artist.setType(type);
-        artist.setPopularity(popularity);
-        artist.setGenre(genre);
+        ElasticArtist artist = new ElasticArtist(Id,name,type,popularity,genre);
         return elasticRepo.save(artist);
     }
-    public List<MongoArtist> aggregateByGenre() {
-
-        System.out.println(databaseName);
+    public List<MongoArtist> aggregateByGenre() throws IOException, InterruptedException{
         final List<MongoArtist> ans = new ArrayList<>();
         MongoDatabase database = client.getDatabase(databaseName);
         MongoCollection<Document> collection = database.getCollection(collectionName);
         AggregateIterable<Document> result = collection.aggregate(Arrays.asList(new Document("$search",
-                        new Document("index", "default").append("text", new Document("query", "pop").append("path", "genre"))),
+                        new Document("index", "search").append("text", new Document("query", "pop").append("path", "genre"))),
                 new Document("$sort", new Document("name", 1L)),
                 new Document("$limit", 2L)));
         for (Document document : result) {
@@ -140,86 +117,76 @@ public class SpotifyService {
         }
         return ans;
     }
-    public List<ElasticArtist> searchByElastic(String Id) {
-        System.out.println(Id);
-            try (ApiTypeHelper.DisabledChecksHandle h = ApiTypeHelper.DANGEROUS_disableRequiredPropertiesCheck(true)) {
-                Query query = MatchQuery.of(m -> m
+    public List<ElasticArtist> searchByElastic(String Id) throws IOException, InterruptedException{
+            try (ApiTypeHelper.DisabledChecksHandle handler = ApiTypeHelper.DANGEROUS_disableRequiredPropertiesCheck(true)) {
+                Query findGenre = MatchQuery.of(callback -> callback
                         .field("genre")
                         .query(Id))._toQuery() ;
 
-                NativeQuery searchQuery2 = NativeQuery.builder()
+                NativeQuery filterOnGenre = NativeQuery.builder()
                         .withSourceFilter(new FetchSourceFilterBuilder().withIncludes().build())
-                        .withQuery(query)
+                        .withQuery(findGenre)
                         .withSort(Sort.by(Sort.Direction.ASC, "name"))
                         .withMaxResults(5)
                         .build();
 
                 List<ElasticArtist> artists = new ArrayList<>();
-                SearchHits<ElasticArtist> data = elasticsearchOperations.search(searchQuery2, ElasticArtist.class) ;
+                SearchHits<ElasticArtist> data = elasticsearchOperations.search(filterOnGenre, ElasticArtist.class) ;
                 data.forEach(searchHit -> artists.add(searchHit.getContent()));
                 return artists;
             }
     }
-    public Iterable<ElasticArtist> findAll() {
+    public Iterable<ElasticArtist> findAll() throws IOException, InterruptedException {
         return elasticRepo.findAll();
     }
-    public List<ElasticArtist> aggregateByPopularity() {
-        try (ApiTypeHelper.DisabledChecksHandle h = ApiTypeHelper.DANGEROUS_disableRequiredPropertiesCheck(true)) {
-            Query query = RangeQuery.of(r -> r
+    public List<ElasticArtist> aggregateByPopularity(int lower,int upper) throws IOException, InterruptedException {
+        try (ApiTypeHelper.DisabledChecksHandle handler = ApiTypeHelper.DANGEROUS_disableRequiredPropertiesCheck(true)) {
+            Query query = RangeQuery.of(range -> range
                     .field("Popularity")
-                    .gte(JsonData.of(80))
-                    .lte(JsonData.of(100)))
+                    .gte(JsonData.of(lower))
+                    .lte(JsonData.of(upper)))
                     ._toQuery();
 
-//            System.out.println(query);
-
-            NativeQuery searchQuery2 = NativeQuery.builder()
+            NativeQuery aggregateOnPopularity = NativeQuery.builder()
                     .withSourceFilter(new FetchSourceFilterBuilder().withIncludes().build())
                     .withQuery(query)
                     .withAggregation("Popularity", Aggregation.of(a->a.terms(ta->ta.field("Popularity").size(1))))
                     .withSort(Sort.by(Sort.Direction.ASC, "Popularity"))
                     .build();
 
-            System.out.println(searchQuery2);
             List<ElasticArtist> artists = new ArrayList<>();
-            SearchHits<ElasticArtist> data = elasticsearchOperations.search(searchQuery2, ElasticArtist.class) ;
+            SearchHits<ElasticArtist> data = elasticsearchOperations.search(aggregateOnPopularity, ElasticArtist.class) ;
             data.forEach(searchHit -> artists.add(searchHit.getContent()));
             return artists;
         }
     }
-    public  Map<String, Integer> filterWithHistogram() throws IOException {
-        try (ApiTypeHelper.DisabledChecksHandle h = ApiTypeHelper.DANGEROUS_disableRequiredPropertiesCheck(true)) {
-        Query query = MatchQuery.of(m -> m
+    public  Map<String, Integer> filterWithHistogram(String genreType) throws IOException,InterruptedException {
+        try (ApiTypeHelper.DisabledChecksHandle handler = ApiTypeHelper.DANGEROUS_disableRequiredPropertiesCheck(true)) {
+        Query query = MatchQuery.of(callback -> callback
                 .field("genre")
-                .query("pop")
+                .query(genreType)
         )._toQuery();
 
-        SearchResponse<ElasticArtist> response = elasticsearchClient.search(b -> b
-                        .index("elasticartists")
+        SearchResponse<ElasticArtist> response = elasticsearchClient.search(callback -> callback
+                        .index("${spotify.artist_index}")
                         .query(query)
-                        .aggregations("popularity-histogram", a -> a
-                                .histogram(h1 -> h1
+                        .aggregations("popularity-histogram", querycallback -> querycallback
+                                .histogram(histocallback -> histocallback
                                         .field("Popularity")
                                         .interval(1.0)
                                 )
                         ).size(1),
                 ElasticArtist.class
         );
-        System.out.println(response);
         List<HistogramBucket> buckets = response.aggregations()
                 .get("popularity-histogram")
                 .histogram()
                 .buckets().array();
-        System.out.println("hi these are my buckets" + buckets);
             Map<String, Integer> popularityMap = new HashMap<>();
-
             for (HistogramBucket bucket: buckets) {
                 String key = String.valueOf(bucket.key());
                 int docCount = (int) bucket.docCount();
-            System.out.println("There are " + bucket.docCount() +
-                    " popularity under " + bucket.key());
                 popularityMap.put(key, docCount);
-
             }
         return popularityMap;
     }}

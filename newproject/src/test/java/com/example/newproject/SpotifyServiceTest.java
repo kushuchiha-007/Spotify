@@ -47,7 +47,7 @@ public class SpotifyServiceTest {
 	}
 
 	@Test
-	public void testMongoSearch() {
+	public void testMongoSearch() throws IOException, InterruptedException {
 		List<MongoArtist> artistsList = new ArrayList<>();
 		MongoArtist artist1 = new MongoArtist();
 		artist1.setId("1");
@@ -64,13 +64,13 @@ public class SpotifyServiceTest {
 		artistsList.add(artist1);
 		artistsList.add(artist2);
 
-		when(SpotifyService.searchByGenre()).thenReturn(artistsList);
+		when(SpotifyService.aggregateByGenre()).thenReturn(artistsList);
 
-		List<MongoArtist> result = postController.searchByGenre();
+		List<MongoArtist> result = postController.aggregateByGenre();
 
 		assertEquals(artistsList, result);
 
-		verify(SpotifyService, times(1)).searchByGenre();
+		verify(SpotifyService, times(1)).aggregateByGenre();
 	}
 
 }
